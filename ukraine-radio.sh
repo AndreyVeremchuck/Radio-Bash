@@ -30,52 +30,203 @@ else
     GREEN='' BLUE='' YELLOW='' RED='' PURPLE='' CYAN='' WHITE='' NC='' BOLD='' ITALIC='' UNDERLINE=''
 fi
 
-# --- УТИЛІТНІ ФУНКЦІЇ ДЛЯ TPUT (КЕРУВАННЯ ТЕРМІНАЛОМ) ---
-clear_screen() { tput clear; }
-save_cursor() { tput sc; }
-restore_cursor() { tput rc; }
-hide_cursor() { tput civis; }
-show_cursor() { tput cnorm; }
-goto_xy() { tput cup "$1" "$2"; }
-erase_line() { tput el; } # Очистити від курсора до кінця рядка
+# --- УТИЛІТНІ ФУНКЦІЇ ДЛЯ КЕРУВАННЯ ТЕРМІНАЛОМ ---
+# Використовуємо "сирі" ANSI-послідовності замість окремих викликів tput —
+# кожен tput форкає новий процес, а при перемальовуванні меню (кожен рядок,
+# кожне натискання клавіші) таких викликів були десятки, що й спричиняло
+# помітні гальма при навігації. Пряме echo escape-кодів не форкає нічого.
+clear_screen() { printf '\033[2J\033[H'; }
+save_cursor() { printf '\033[s'; }
+restore_cursor() { printf '\033[u'; }
+hide_cursor() { printf '\033[?25l'; }
+show_cursor() { printf '\033[?25h'; }
+goto_xy() { printf '\033[%d;%dH' "$(($1 + 1))" "$(($2 + 1))"; } # tput cup — 0-based; ANSI CUP — 1-based
+erase_line() { printf '\033[K'; } # Очистити від курсора до кінця рядка
 get_terminal_height() { tput lines; }
-get_terminal_width() { tput cols; } # Додано для майбутнього використання
+get_terminal_width() { tput cols; } # Розмір вікна все ще читаємо через tput (не в гарячому шляху)
 
 # --- Анімаційний спінер (використовуватиметься для індикації завантаження) ---
 SPINNER_FRAMES=( "|" "/" "-" "\\" )
 SPINNER_FRAME_COUNT=${#SPINNER_FRAMES[@]}
 
-# --- АКТУАЛЬНІ URL-АДРЕСИ РАДІОСТАНЦІЙ (ОНОВЛЕНО 06.06.2025 12:15 EEST) ---
+# --- АКТУАЛЬНІ URL-АДРЕСИ РАДІОСТАНЦІЙ (ПЕРЕВІРЕНО 21.09.2026) ---
 declare -A STATIONS
-STATIONS[1]="106.1 FM|http://109.251.190.11:8888/live"
-STATIONS[2]="Akkerman FM|https://stream.zeno.fm/fs7e5zt06qzuv?zs=UpMrSXSuSICt3jfcGoIPPg"
-STATIONS[3]="Armiya FM|https://icecast.armyfm.com.ua:8443/ArmyFM"
-STATIONS[4]="Avtokhvylia|https://radio.moa.org.ua/Avtohvylia"
-STATIONS[5]="Best FM|http://radio.bestfm.ua:8001/bestfm"
-STATIONS[6]="Boguslav FM|https://complex.in.ua/b320" # Обрано одне з посилань
-STATIONS[7]="Borispol FM|http://91.219.253.226:8000/borispilfm"
-STATIONS[8]="Brody FM|https://complex.in.ua/brodyHD"
-STATIONS[9]="Bukovynsʹka Khvylya|http://185.233.118.107:8000/stream"
-STATIONS[10]="Buske Radio|https://complex.in.ua/buskfm"
-STATIONS[11]="Classic Radio|https://online.classicradio.com.ua/ClassicRadio_HD" # Обрано одне з посилань
-STATIONS[12]="DJ FM|https://cast.brg.ua/djfm_main_public_mp3_hq"
-STATIONS[13]="Drimajko - Kraina FM|http://live.radioec.com.ua:8000/drimayko" # Обрано одне з посилань
-STATIONS[14]="Duzhe Radio|https://ipradio.net:8443/duzheHD"
-STATIONS[15]="Europa Plus Dnipro|http://217.20.173.105:8100/live"
-STATIONS[16]="FM Galychyna|https://stream320.galychyna.fm/WebSite"
-STATIONS[17]="Fresh FM|http://193.53.83.3:8000/fresh-fm_mp3"
-STATIONS[18]="Golos Prykarpattya|https://complex.in.ua/stsambir"
-STATIONS[19]="Golos Stryia|https://complex.in.ua/struy"
-STATIONS[20]="Hit FM|https://www.hitfm.ua/HitFM.m3u" # Обрано одне з посилань
-STATIONS[21]="Hromadske Radio|http://91.218.212.67:8000/stream-ps-hi" # Обрано одне з посилань
-STATIONS[22]="Hutsulska Stolytsya|http://37.157.242.104:35444/Stream.mp3"
-STATIONS[23]="Informator FM|https://main.inf.fm:8101/;" # Обрано одне з посилань
-STATIONS[24]="Kazki|https://radio.nrcu.gov.ua:8443/kazka-mp3"
-STATIONS[25]="Kiss FM|https://online.kissfm.ua/KissFM"
+STATIONS[1]="Українське радіо|http://radio.ukr.radio:8000/ur1-mp3"
+STATIONS[2]="Радіо Промінь|http://radio.ukr.radio:8000/ur2-mp3"
+STATIONS[3]="Радіо Культура|http://radio.ukr.radio:8000/ur3-mp3"
+STATIONS[4]="Hit FM|http://online.hitfm.ua/HitFM"
+STATIONS[5]="Hit FM Українські хіти|http://online.hitfm.ua/HitFM_Ukr"
+STATIONS[6]="Kiss FM|https://online.kissfm.ua/KissFM_HD"
+STATIONS[7]="Kiss FM Ukrainian|https://online.kissfm.ua/KissFM_Ukr"
+STATIONS[8]="Radio ROKS|https://online.radioroks.ua/RadioROKS_HD"
+STATIONS[9]="Radio ROKS Ballads|https://online.radioroks.ua/RadioROKS_Ballads_HD"
+STATIONS[10]="Radio ROKS New Rock|https://online.radioroks.ua/RadioROKS_NewRock_HD"
+STATIONS[11]="Radio ROKS Hard'n'Heavy|https://online.radioroks.ua/RadioROKS_HardnHeavy_HD"
+STATIONS[12]="Мелодія FM|https://online.melodiafm.ua/MelodiaFM"
+STATIONS[13]="Авторадіо|https://cast.mediaonline.net.ua/avtoradio"
+STATIONS[14]="Громадське радіо|http://91.218.212.67:8000/stream"
+STATIONS[15]="Радіо НВ|https://online-radio.nv.ua/radionv.mp3"
+STATIONS[16]="Radio Relax|https://online.radiorelax.ua/RadioRelax"
+STATIONS[17]="NRJ Ukraine|https://cast.mediaonline.net.ua/nrj320"
+STATIONS[18]="Львівська хвиля|http://onair.lviv.fm:8000/lviv32.fm"
+STATIONS[19]="Перець FM|https://radio.perec.fm/radio-stilnoe"
+STATIONS[20]="Єдині новини|https://online-news.radioplayer.ua/RadioNews"
+STATIONS[21]="DJFM|https://cast.fex.net/djfm_x"
+STATIONS[22]="Lounge FM|https://cast.mediaonline.net.ua/loungefm320"
+STATIONS[23]="Lux FM|http://lux.radio.tvstitch.com/kyiv/lux_adv_sd"
+STATIONS[24]="Українське радіо (резерв)|http://91.218.213.49:8000/ur1-mp3"
+STATIONS[25]="RockRadio UA|https://rockradioua.online:8433/rock_256"
+STATIONS[26]="Kiss FM Deep|https://online.kissfm.ua/KissFM_Deep"
+STATIONS[27]="Kiss FM Digital|https://online.kissfm.ua/KissFM_Digital_HD"
+STATIONS[28]="Hit FM Top|http://online.hitfm.ua/HitFM_Top"
+STATIONS[29]="Hit FM Best|http://online.hitfm.ua/HitFM_Best"
+STATIONS[30]="Radio ROKS|http://online.radioroks.ua/RadioROKS_HD"
+STATIONS[31]="Rock Ballads|http://online.radioroks.ua/RadioROKS_Ballads"
+STATIONS[32]="Radio NV (резерв)|http://91.218.212.84:8000/radionv.mp3"
+STATIONS[33]="Єдині новини 24|https://online-news.radioplayer.ua/RadioNews"
+STATIONS[34]="Радіо Піхота|https://online.pihota.fm/listen/radio/aac64"
+STATIONS[35]="Радіо Свобода|https://n04.radiojar.com/hcrb063nn3quv"
+STATIONS[36]="Люкс FM|https://lux.radio.tvstitch.com/zoloti-hiti-sd"
+STATIONS[37]="Радіо Максимум|http://lux.radio.tvstitch.com/kyiv/max_adv_sd"
+STATIONS[38]="Львівська хвиля (резерв)|http://onair.lviv.fm:8000/lviv32.fm"
+STATIONS[39]="FM Galychyna|https://stream320.galychyna.fm/WebSite"
+STATIONS[40]="DJ FM|https://cast.brg.ua/djfm_main_public_mp3_hq"
+STATIONS[41]="ProgressiveUA|http://92.5.38.24:8000/radio.mp3"
+STATIONS[42]="Одеса радіо|https://listen6.myradio24.com/odesradio"
+STATIONS[43]="Авторадіо (резерв)|https://cast.mediaonline.net.ua/avtoradio"
+STATIONS[44]="Lounge FM (HD)|https://cast.mediaonline.net.ua/loungefm320"
+STATIONS[45]="NRJ Ukraine (HD)|https://cast.mediaonline.net.ua/nrj320"
+STATIONS[46]="Brokenbeats|https://brokenbeats.net/stream/aac"
+STATIONS[47]="Перець FM|https://radio.perec.fm/radio-stilnoe"
+STATIONS[48]="Radio Relax (резерв)|https://online.radiorelax.ua/RadioRelax"
+STATIONS[49]="Українське радіо AAC|http://radio.ukr.radio:8000/ur1-aacplus-l"
+STATIONS[50]="RockRadio UA (резерв)|https://rockradioua.online:8433/rock_256"
+STATIONS[51]="Radio ROKS Classic Rock|https://online.radioroks.ua/RadioROKS_ClassicRock_HD"
+STATIONS[52]="Radio Jazz Ukraine|http://jazz.ipfm.net/RadioJazz_HD"
+STATIONS[53]="Radio Bayraktar|https://online.radiobayraktar.ua/RadioBayraktar"
+STATIONS[54]="Radio Shanson|https://cast.brg.ua/newshanson_main_public_mp3_hq"
+STATIONS[55]="Radio Jazz Gold FM|https://online.radiojazz.ua/RadioJazz_Gold"
+STATIONS[56]="Мелодія FM 95.2|http://online.melodiafm.ua/MelodiaFM"
+STATIONS[57]="Galychyna|https://stream320.galychyna.fm/WebSite"
+STATIONS[58]="Радіо Київ 98 FM|https://cdn.vsnw.net:8943/kyiv_fm_128k"
+STATIONS[59]="Radio Relax Instrumental|https://online.radiorelax.ua/RadioRelax_Instrumental_HD"
+STATIONS[60]="Гуляй Радіо|https://online.radioplayer.ua/GuliayRadio"
+STATIONS[61]="DJFM Dance|https://cast.brg.ua/djfmdance_main_public_mp3_hq"
+STATIONS[62]="Радіо NovaLine|https://stream.novaline.net.ua/Novaline_320"
+STATIONS[63]="Jazz FM 104.6|http://online.radiojazz.ua/RadioJazz"
+STATIONS[64]="Radio ROKS New Rock (резерв)|http://online.radioroks.ua/RadioROKS_NewRock_HD"
+STATIONS[65]="MFM Station|https://radio.mfm.ua/online128"
+STATIONS[66]="Радіо Трек|http://online2.radiotrek.rv.ua:8000/AAC+_64"
+STATIONS[67]="Просто Radi.O (Київ)|http://85.238.113.60:8000/PRK128"
+STATIONS[68]="Люкс ФМ Українські хіти|https://lux.radio.tvstitch.com/ukrayinski-hiti-sd"
+STATIONS[69]="FM Disco Melody|https://online.melodiafm.ua/MelodiaFM_Disco"
+STATIONS[70]="Радіо Nostalgie|http://lux.radio.tvstitch.com/kyiv/nst_adv_sd"
+STATIONS[71]="Наше Радіо HD|https://online.nasheradio.ua/NasheRadio_HD"
+STATIONS[72]="Хіт ФМ Найбільші хіти|http://online.hitfm.ua/HitFM_Best_Live"
+STATIONS[73]="Прямий FM|https://cast.mediaonline.net.ua/prmfm320"
+STATIONS[74]="Світ FM|http://195.234.148.52:8000/"
+STATIONS[75]="Країна FM|http://live.radioec.com.ua:8000/kiev"
+STATIONS[76]="Громадське радіо (резерв)|http://5.9.8.20:8000/stream"
+STATIONS[77]="Мелодія FM Romantic|http://online.melodiafm.ua/MelodiaFM_Romantic_Live"
+STATIONS[78]="Classic Radio|https://online.classicradio.ua/ClassicRadio"
+STATIONS[79]="Наше Радіо 107.9|http://online.nasheradio.ua/NasheRadio"
+STATIONS[80]="Best FM 95.6|http://radio.bestfm.ua/bestfm"
+STATIONS[81]="Мелодія FM Disco|http://online.melodiafm.ua/MelodiaFM_Disco_Live"
+STATIONS[82]="Явір ФМ|https://complex.in.ua/Yavir"
+STATIONS[83]="Radio Ppeople FM|http://ppeople.fm:8000/main"
+STATIONS[84]="РокРадіо Metal|https://rockradioua.online:8433/metal_256"
+STATIONS[85]="Radio ROKS Ukrainian|http://online.radioroks.ua/RadioROKS_Ukr_HD"
+STATIONS[86]="Радіо Шлягер FM|https://cast.brg.ua/shanson_main_public_mp3_hq"
+STATIONS[87]="Радіо Перше|https://live.radio1.com.ua/liveradio64"
+STATIONS[88]="Champion Radio|http://sportradio.com.ua:8000/championradio"
+STATIONS[89]="Люкс ФМ Сучасні хіти|https://lux.radio.tvstitch.com/suchasni-hiti-sd"
+STATIONS[90]="Радіо РЕЙД|https://a9.asurahosting.com:7390/radio.mp3"
+STATIONS[91]="Люкс ФМ Chill and Relax|https://lux.radio.tvstitch.com/chill-sd"
+STATIONS[92]="УХ-Радіо|http://193.169.80.7:8001/efir"
+STATIONS[93]="Радіо Kyivstar Happy Hits|https://radio.kyivstar.ua/stream/sport/master.m3u8"
+STATIONS[94]="Kiss FM EDM|https://online.kissfm.ua/KissFM_HD"
+STATIONS[95]="Kiss FM Digital (резерв)|https://online.kissfm.ua/KissFM_Digital_HD"
+STATIONS[96]="Hit FM HD|https://online.hitfm.ua/HitFM_HD"
+STATIONS[97]="Radio ROKS Hard'n'Heavy (резерв)|https://online.radioroks.ua/RadioROKS_HardnHeavy_HD"
+STATIONS[98]="Авторадіо HD|https://cast.mediaonline.net.ua/avtoradio"
+STATIONS[99]="Мелодія FM (резерв)|https://online.melodiafm.ua/MelodiaFM"
+STATIONS[100]="Українське радіо (резерв 2)|http://91.218.213.49:8000/ur1-mp3"
 
 PLAYER_PID=""
 CURRENT_SELECTION=1
 MAX_STATION_INDEX=${#STATIONS[@]}
+CURRENT_PAGE=1
+
+# --- ПАРАМЕТРИ АДАПТИВНОЇ СІТКИ СТОВПЧИКІВ ---
+# Ширина однієї "клітинки" станції: префікс(2) + номер(3) + ": "(2) + назва(28) + відступ(2)
+NAME_WIDTH=28
+NUM_WIDTH=3
+readonly _CELL_CONTENT_WIDTH=$((2 + NUM_WIDTH + 2 + NAME_WIDTH))
+readonly COLUMN_WIDTH=$((_CELL_CONTENT_WIDTH + 2))
+MAX_COLUMNS=5 # Не більше стовпчиків, навіть якщо термінал дуже широкий (читабельність)
+
+# Значення нижче перераховуються динамічно функцією recompute_layout()
+# залежно від поточного розміру вікна терміналу (tput lines/cols).
+TERM_HEIGHT=0
+TERM_WIDTH=0
+NUM_COLS=1
+ROWS_PER_COL=1
+PAGE_SIZE=1
+MAX_PAGE=1
+PAGE_OFFSET=0
+GRID_LEFT_MARGIN=0 # Відступ зліва, щоб сітка станцій була по центру екрана
+
+# Перераховує кількість стовпчиків та рядків на сторінці за поточним розміром
+# вікна терміналу. Викликається перед кожним показом меню та при зміні
+# розміру вікна (WINCH), тому додаток гарно вписується у будь-яке вікно.
+recompute_layout() {
+    TERM_HEIGHT=$(get_terminal_height)
+    TERM_WIDTH=$(get_terminal_width)
+
+    # Резервуємо рядки під заголовок (4) та підвал з керуванням і статусом (~6)
+    local reserved_lines=10
+    local available_rows=$((TERM_HEIGHT - reserved_lines))
+    if (( available_rows < 3 )); then available_rows=3; fi
+    ROWS_PER_COL=$available_rows
+
+    local cols_fit=$((TERM_WIDTH / COLUMN_WIDTH))
+    if (( cols_fit < 1 )); then cols_fit=1; fi
+    if (( cols_fit > MAX_COLUMNS )); then cols_fit=$MAX_COLUMNS; fi
+    NUM_COLS=$cols_fit
+
+    # Центруємо сітку стовпчиків по горизонталі відносно ширини терміналу
+    local grid_width=$((NUM_COLS * COLUMN_WIDTH))
+    GRID_LEFT_MARGIN=$(( (TERM_WIDTH - grid_width) / 2 ))
+    if (( GRID_LEFT_MARGIN < 0 )); then GRID_LEFT_MARGIN=0; fi
+
+    PAGE_SIZE=$((NUM_COLS * ROWS_PER_COL))
+    MAX_PAGE=$(( (MAX_STATION_INDEX + PAGE_SIZE - 1) / PAGE_SIZE ))
+    if (( MAX_PAGE < 1 )); then MAX_PAGE=1; fi
+    if (( CURRENT_PAGE > MAX_PAGE )); then CURRENT_PAGE=$MAX_PAGE; fi
+    if (( CURRENT_PAGE < 1 )); then CURRENT_PAGE=1; fi
+
+    PAGE_OFFSET=$(( (CURRENT_PAGE - 1) * PAGE_SIZE ))
+
+    # Якщо після зміни розкладки поточний вибір вийшов за межі сторінки —
+    # повертаємось на перший пункт, щоб уникнути "порожньої" клітинки.
+    if (( CURRENT_SELECTION > PAGE_SIZE )) || (( CURRENT_SELECTION < 1 )); then
+        CURRENT_SELECTION=1
+    fi
+}
+
+# Повертає кількість реальних станцій у стовпчику $1 на поточній сторінці
+# (може бути менше ROWS_PER_COL для останнього стовпчика/сторінки).
+column_count() {
+    local col="$1"
+    local start_global=$((PAGE_OFFSET + col * ROWS_PER_COL + 1))
+    if (( start_global > MAX_STATION_INDEX )); then
+        echo 0
+        return
+    fi
+    local count=$((MAX_STATION_INDEX - start_global + 1))
+    if (( count > ROWS_PER_COL )); then count=$ROWS_PER_COL; fi
+    echo "$count"
+}
 
 # --- ФУНКЦІЇ КЕРУВАННЯ ПРОГРАВАЧЕМ (MPV) ---
 
@@ -199,7 +350,7 @@ show_menu() {
     current_line=$((current_line + 1))
     goto_xy $current_line 0; echo -e "${BLUE}-----------------------------------${NC}"
     current_line=$((current_line + 1))
-    goto_xy $current_line 0; echo -e "${BOLD}Оберіть станцію (стрілки ВГОРУ/ВНИЗ, ENTER для вибору):${NC}"
+    goto_xy $current_line 0; echo -e "${BOLD}Сторінка ${CURRENT_PAGE}/${MAX_PAGE} (${NUM_COLS} стовп.) — ↑↓←→ циклічна навігація, ENTER — вибір:${NC}"
     current_line=$((current_line + 2)) # Відступ перед списком станцій
 
     local menu_start_line=$current_line # Рядок, з якого починається список станцій
@@ -213,40 +364,52 @@ show_menu() {
         current_playing_name="$STATION_NAME"
     fi
 
-    # Вивід списку станцій
-    for i in $(seq 1 "$MAX_STATION_INDEX" | sort -n); do
-        local station_info="${STATIONS[$i]}"
-        local name="${station_info%%|*}"
-        
-        local item_color="${CYAN}"
-        local prefix="  "
+    # Вивід станцій поточної сторінки у NUM_COLS стовпчиках по ROWS_PER_COL
+    # пунктів — обидва значення підлаштовані під розмір вікна терміналу.
+    local global_selection=$((PAGE_OFFSET + CURRENT_SELECTION))
+    for row in $(seq 0 $((ROWS_PER_COL - 1))); do
+        local line=""
+        for col in $(seq 0 $((NUM_COLS - 1))); do
+            local idx=$((PAGE_OFFSET + col * ROWS_PER_COL + row + 1))
+            if (( idx <= MAX_STATION_INDEX )) && [ -n "${STATIONS[$idx]+x}" ]; then
+                local info="${STATIONS[$idx]}"
+                local name="${info%%|*}"
+                local display="${name:0:${NAME_WIDTH}}"
+                local color="${CYAN}"
+                local prefix="  "
 
-        goto_xy $((menu_start_line + i - 1)) 0 # Позиціонуємо курсор
-        erase_line                             # Очищаємо рядок
+                if [ "$idx" -eq "$global_selection" ]; then
+                    color="${WHITE}${BOLD}"
+                    prefix="> "
+                fi
+                if [ "$name" = "$current_playing_name" ] && [ "$PLAYING" = "true" ]; then
+                    color="${GREEN}${BOLD}"
+                fi
 
-        if [ "$i" -eq "$CURRENT_SELECTION" ]; then
-            item_color="${WHITE}${BOLD}" # Підсвічуємо обрану станцію
-            prefix="> "
-        fi
-
-        # Якщо ця станція грає, змінюємо її колір
-        if [ "$name" = "$current_playing_name" ] && [ "$PLAYING" = "true" ]; then
-             item_color="${GREEN}${BOLD}"
-             if [ "$i" -eq "$CURRENT_SELECTION" ]; then
-                 item_color="${WHITE}${BOLD}" # Залишаємо підсвічування, якщо обрана
-             fi
-        fi
-
-        printf "%s%s%2d: %s%s\n" "$prefix" "$item_color" "$i" "$name" "$NC"
+                local num_str
+                num_str=$(printf "%${NUM_WIDTH}d" "$idx")
+                local plain_cell="${prefix}${num_str}: ${display}"
+                # printf "%-Ns" рахує байти, а не символи, тому кирилиця (2 байти
+                # на символ у UTF-8) ламає вирівнювання. Рахуємо відступ вручну
+                # за довжиною рядка в СИМВОЛАХ (${#рядок} коректно рахує символи).
+                local pad=$((COLUMN_WIDTH - ${#plain_cell}))
+                if (( pad < 0 )); then pad=0; fi
+                line+="${color}${plain_cell}${NC}$(printf '%*s' "$pad" '')"
+            else
+                line+="$(printf '%*s' "$COLUMN_WIDTH" '')"
+            fi
+        done
+        goto_xy $((menu_start_line + row)) "$GRID_LEFT_MARGIN"
+        erase_line
+        echo -n -e "$line"
     done
-
     # Вивід елементів керування
-    local controls_start_line=$((menu_start_line + MAX_STATION_INDEX))
+    local controls_start_line=$((menu_start_line + ROWS_PER_COL))
     goto_xy $controls_start_line 0; echo "" # Додатковий відступ
     controls_start_line=$((controls_start_line + 1))
     goto_xy $controls_start_line 0; echo -e "${BOLD}Керування:${NC}"
     controls_start_line=$((controls_start_line + 1))
-    goto_xy $controls_start_line 0; echo -e "  ${GREEN}P${NC}: Пауза/Відновити | ${RED}S${NC}: Зупинити | ${YELLOW}M${NC}: Мутувати/Розмутувати | ${PURPLE}Q${NC}: Вийти"
+    goto_xy $controls_start_line 0; echo -e "  ${GREEN}Space${NC}: Пауза | ${RED}S${NC}: Стоп | ${YELLOW}M${NC}: Звук | ${PURPLE}Q${NC}: Вихід | ${CYAN}↑↓←→${NC}: циклічна навігація | ${CYAN}Tab/N${NC}: Сторінка"
     controls_start_line=$((controls_start_line + 1))
     goto_xy $controls_start_line 0; echo -e "${BLUE}-----------------------------------${NC}"
     
@@ -295,15 +458,18 @@ cleanup() {
 # Перехоплюємо сигнали завершення, щоб виконати cleanup
 trap cleanup SIGINT SIGTERM SIGHUP
 # Перехоплюємо сигнал зміни розміру вікна терміналу
-trap 'show_menu' WINCH
+trap 'recompute_layout; show_menu' WINCH
 
 # Ініціалізація: встановлюємо початковий статус
 update_status_file "false" "" "false" "false"
 
+# Розкладку рахуємо один раз на старті — далі лише при зміні розміру вікна
+# (WINCH), а не на кожне натискання клавіші, бо tput lines/cols форкають
+# процес і це помітно гальмувало навігацію.
+recompute_layout
+
 # --- ОСНОВНИЙ ЦИКЛ КЕРУВАННЯ ---
 while true; do
-    MAX_STATION_INDEX=${#STATIONS[@]} # Оновлюємо кількість станцій на випадок змін
-
     show_menu # Відображаємо меню та статус
     
     # Читаємо ввід користувача
@@ -313,7 +479,7 @@ while true; do
         "q"|"Q")
             cleanup
             ;;
-        "p"|"P")
+        " "|"p"|"P")
             toggle_pause
             ;;
         "m"|"M")
@@ -322,28 +488,70 @@ while true; do
         "s"|"S")
             stop_player
             ;;
-        $'\x1b[A') # Стрілка вгору
-            CURRENT_SELECTION=$((CURRENT_SELECTION - 1))
-            if [ "$CURRENT_SELECTION" -lt 1 ]; then
-                CURRENT_SELECTION=$MAX_STATION_INDEX
+        $'\x1b[A') # Стрілка вгору — циклічно в межах поточного стовпчика
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            count=$(column_count "$col_index")
+            if (( count > 0 )); then
+                row_index=$(( (row_index - 1 + count) % count ))
+                CURRENT_SELECTION=$((col_index * ROWS_PER_COL + row_index + 1))
             fi
             ;;
-        $'\x1b[B') # Стрілка вниз
-            CURRENT_SELECTION=$((CURRENT_SELECTION + 1))
-            if [ "$CURRENT_SELECTION" -gt "$MAX_STATION_INDEX" ]; then
-                CURRENT_SELECTION=1
+        $'\x1b[B') # Стрілка вниз — циклічно в межах поточного стовпчика
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            count=$(column_count "$col_index")
+            if (( count > 0 )); then
+                row_index=$(( (row_index + 1) % count ))
+                CURRENT_SELECTION=$((col_index * ROWS_PER_COL + row_index + 1))
             fi
+            ;;
+        $'\x1b[D') # Стрілка вліво — циклічний перехід між стовпчиками (з останнього на перший)
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            new_col=$col_index
+            count=0
+            for (( i = 0; i < NUM_COLS; i++ )); do
+                new_col=$(( (new_col - 1 + NUM_COLS) % NUM_COLS ))
+                count=$(column_count "$new_col")
+                if (( count > 0 )); then break; fi
+            done
+            if (( count > 0 )); then
+                if (( row_index >= count )); then row_index=$((count - 1)); fi
+                CURRENT_SELECTION=$((new_col * ROWS_PER_COL + row_index + 1))
+            fi
+            ;;
+        $'\x1b[C') # Стрілка вправо — циклічний перехід між стовпчиками (з останнього на перший)
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            new_col=$col_index
+            count=0
+            for (( i = 0; i < NUM_COLS; i++ )); do
+                new_col=$(( (new_col + 1) % NUM_COLS ))
+                count=$(column_count "$new_col")
+                if (( count > 0 )); then break; fi
+            done
+            if (( count > 0 )); then
+                if (( row_index >= count )); then row_index=$((count - 1)); fi
+                CURRENT_SELECTION=$((new_col * ROWS_PER_COL + row_index + 1))
+            fi
+            ;;
+        $'\t'|"n"|"N") # Tab або N — циклічно перемкнути сторінку
+            CURRENT_PAGE=$((CURRENT_PAGE % MAX_PAGE + 1))
+            CURRENT_SELECTION=1
             ;;
         "") # Enter
-            station_info="${STATIONS[$CURRENT_SELECTION]}"
+            global_index=$((PAGE_OFFSET + CURRENT_SELECTION))
+            station_info="${STATIONS[$global_index]}"
             name="${station_info%%|*}"
             url="${station_info##*|}"
             play_station "$url" "$name"
             ;;
-        *) # Обробка вводу цифр
+        *) # Обробка вводу цифр (глобальний номер станції 1..MAX_STATION_INDEX)
             if [[ "$choice_char" =~ ^[0-9]+$ ]] && (( choice_char >= 1 && choice_char <= MAX_STATION_INDEX )); then
-                CURRENT_SELECTION=$choice_char
-                station_info="${STATIONS[$CURRENT_SELECTION]}"
+                CURRENT_PAGE=$(( (choice_char - 1) / PAGE_SIZE + 1 ))
+                CURRENT_SELECTION=$(( (choice_char - 1) % PAGE_SIZE + 1 ))
+                station_info="${STATIONS[$choice_char]}"
                 name="${station_info%%|*}"
                 url="${station_info##*|}"
                 play_station "$url" "$name"

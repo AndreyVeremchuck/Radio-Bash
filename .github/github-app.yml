@@ -1,0 +1,7 @@
+scripts:
+  - name: Setup
+    command: chmod +x ukraine-radio.sh
+    triggers:
+      - session.create
+  - name: Run
+    command: ./ukraine-radio.sh
