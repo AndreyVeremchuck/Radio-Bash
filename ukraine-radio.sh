@@ -151,10 +151,72 @@ STATIONS[100]="Українське радіо (резерв 2)|http://91.218.21
 PLAYER_PID=""
 CURRENT_SELECTION=1
 MAX_STATION_INDEX=${#STATIONS[@]}
-COLUMN_SIZE=25
-PAGE_SIZE=$((COLUMN_SIZE * 2)) # 50 станцій на сторінці (2 стовпчики по 25)
 CURRENT_PAGE=1
-MAX_PAGE=$(( (MAX_STATION_INDEX + PAGE_SIZE - 1) / PAGE_SIZE ))
+
+# --- ПАРАМЕТРИ АДАПТИВНОЇ СІТКИ СТОВПЧИКІВ ---
+# Ширина однієї "клітинки" станції: префікс(2) + номер(3) + ": "(2) + назва(28) + відступ(2)
+NAME_WIDTH=28
+NUM_WIDTH=3
+readonly _CELL_CONTENT_WIDTH=$((2 + NUM_WIDTH + 2 + NAME_WIDTH))
+readonly COLUMN_WIDTH=$((_CELL_CONTENT_WIDTH + 2))
+MAX_COLUMNS=5 # Не більше стовпчиків, навіть якщо термінал дуже широкий (читабельність)
+
+# Значення нижче перераховуються динамічно функцією recompute_layout()
+# залежно від поточного розміру вікна терміналу (tput lines/cols).
+TERM_HEIGHT=0
+TERM_WIDTH=0
+NUM_COLS=1
+ROWS_PER_COL=1
+PAGE_SIZE=1
+MAX_PAGE=1
+PAGE_OFFSET=0
+
+# Перераховує кількість стовпчиків та рядків на сторінці за поточним розміром
+# вікна терміналу. Викликається перед кожним показом меню та при зміні
+# розміру вікна (WINCH), тому додаток гарно вписується у будь-яке вікно.
+recompute_layout() {
+    TERM_HEIGHT=$(get_terminal_height)
+    TERM_WIDTH=$(get_terminal_width)
+
+    # Резервуємо рядки під заголовок (4) та підвал з керуванням і статусом (~6)
+    local reserved_lines=10
+    local available_rows=$((TERM_HEIGHT - reserved_lines))
+    if (( available_rows < 3 )); then available_rows=3; fi
+    ROWS_PER_COL=$available_rows
+
+    local cols_fit=$((TERM_WIDTH / COLUMN_WIDTH))
+    if (( cols_fit < 1 )); then cols_fit=1; fi
+    if (( cols_fit > MAX_COLUMNS )); then cols_fit=$MAX_COLUMNS; fi
+    NUM_COLS=$cols_fit
+
+    PAGE_SIZE=$((NUM_COLS * ROWS_PER_COL))
+    MAX_PAGE=$(( (MAX_STATION_INDEX + PAGE_SIZE - 1) / PAGE_SIZE ))
+    if (( MAX_PAGE < 1 )); then MAX_PAGE=1; fi
+    if (( CURRENT_PAGE > MAX_PAGE )); then CURRENT_PAGE=$MAX_PAGE; fi
+    if (( CURRENT_PAGE < 1 )); then CURRENT_PAGE=1; fi
+
+    PAGE_OFFSET=$(( (CURRENT_PAGE - 1) * PAGE_SIZE ))
+
+    # Якщо після зміни розкладки поточний вибір вийшов за межі сторінки —
+    # повертаємось на перший пункт, щоб уникнути "порожньої" клітинки.
+    if (( CURRENT_SELECTION > PAGE_SIZE )) || (( CURRENT_SELECTION < 1 )); then
+        CURRENT_SELECTION=1
+    fi
+}
+
+# Повертає кількість реальних станцій у стовпчику $1 на поточній сторінці
+# (може бути менше ROWS_PER_COL для останнього стовпчика/сторінки).
+column_count() {
+    local col="$1"
+    local start_global=$((PAGE_OFFSET + col * ROWS_PER_COL + 1))
+    if (( start_global > MAX_STATION_INDEX )); then
+        echo 0
+        return
+    fi
+    local count=$((MAX_STATION_INDEX - start_global + 1))
+    if (( count > ROWS_PER_COL )); then count=$ROWS_PER_COL; fi
+    echo "$count"
+}
 
 # --- ФУНКЦІЇ КЕРУВАННЯ ПРОГРАВАЧЕМ (MPV) ---
 
@@ -278,11 +340,10 @@ show_menu() {
     current_line=$((current_line + 1))
     goto_xy $current_line 0; echo -e "${BLUE}-----------------------------------${NC}"
     current_line=$((current_line + 1))
-    goto_xy $current_line 0; echo -e "${BOLD}Сторінка ${CURRENT_PAGE}/${MAX_PAGE} — стрілки ВГОРУ/ВНИЗ, ←/→, ENTER для вибору:${NC}"
+    goto_xy $current_line 0; echo -e "${BOLD}Сторінка ${CURRENT_PAGE}/${MAX_PAGE} (${NUM_COLS} стовп.) — ↑↓←→ циклічна навігація, ENTER — вибір:${NC}"
     current_line=$((current_line + 2)) # Відступ перед списком станцій
 
     local menu_start_line=$current_line # Рядок, з якого починається список станцій
-    local left_column_width=38
 
     local current_playing_name=""
     local PLAYING="false"
@@ -293,62 +354,52 @@ show_menu() {
         current_playing_name="$STATION_NAME"
     fi
 
-    # Вивід 50 станцій поточної сторінки у двох стовпчиках по 25 пунктів.
-    # CURRENT_SELECTION відносний до сторінки (1..PAGE_SIZE); global_selection —
-    # абсолютний номер станції, який використовується для підсвічування.
-    local page_offset=$(( (CURRENT_PAGE - 1) * PAGE_SIZE ))
-    local global_selection=$((page_offset + CURRENT_SELECTION))
-    for row in $(seq 0 $((COLUMN_SIZE - 1))); do
-        local left_index=$((page_offset + row + 1))
-        local right_index=$((page_offset + row + COLUMN_SIZE + 1))
-        local left_info="${STATIONS[$left_index]}"
-        local right_info="${STATIONS[$right_index]}"
-        local left_name="${left_info%%|*}"
-        local right_name="${right_info%%|*}"
-        local left_display="${left_name:0:28}"
-        local right_display="${right_name:0:28}"
-        local left_color="${CYAN}"
-        local right_color="${CYAN}"
-        local left_prefix="  "
-        local right_prefix="  "
+    # Вивід станцій поточної сторінки у NUM_COLS стовпчиках по ROWS_PER_COL
+    # пунктів — обидва значення підлаштовані під розмір вікна терміналу.
+    local global_selection=$((PAGE_OFFSET + CURRENT_SELECTION))
+    for row in $(seq 0 $((ROWS_PER_COL - 1))); do
+        local line=""
+        for col in $(seq 0 $((NUM_COLS - 1))); do
+            local idx=$((PAGE_OFFSET + col * ROWS_PER_COL + row + 1))
+            if (( idx <= MAX_STATION_INDEX )) && [ -n "${STATIONS[$idx]+x}" ]; then
+                local info="${STATIONS[$idx]}"
+                local name="${info%%|*}"
+                local display="${name:0:${NAME_WIDTH}}"
+                local color="${CYAN}"
+                local prefix="  "
 
-        if [ "$left_index" -eq "$global_selection" ]; then
-            left_color="${WHITE}${BOLD}"
-            left_prefix="> "
-        fi
-        if [ "$right_index" -eq "$global_selection" ]; then
-            right_color="${WHITE}${BOLD}"
-            right_prefix="> "
-        fi
-        if [ "$left_name" = "$current_playing_name" ] && [ "$PLAYING" = "true" ]; then
-            left_color="${GREEN}${BOLD}"
-        fi
-        if [ "$right_name" = "$current_playing_name" ] && [ "$PLAYING" = "true" ]; then
-            right_color="${GREEN}${BOLD}"
-        fi
+                if [ "$idx" -eq "$global_selection" ]; then
+                    color="${WHITE}${BOLD}"
+                    prefix="> "
+                fi
+                if [ "$name" = "$current_playing_name" ] && [ "$PLAYING" = "true" ]; then
+                    color="${GREEN}${BOLD}"
+                fi
 
-        # printf "%-Ns" рахує байти, а не символи, тому кирилиця (2 байти на
-        # символ у UTF-8) ламає вирівнювання. Рахуємо відступ вручну за
-        # довжиною рядка в СИМВОЛАХ (${#рядок} коректно рахує символи).
-        local left_pad=$(( 28 - ${#left_display} ))
-        if [ "$left_pad" -lt 0 ]; then left_pad=0; fi
-
+                local num_str
+                num_str=$(printf "%${NUM_WIDTH}d" "$idx")
+                local plain_cell="${prefix}${num_str}: ${display}"
+                # printf "%-Ns" рахує байти, а не символи, тому кирилиця (2 байти
+                # на символ у UTF-8) ламає вирівнювання. Рахуємо відступ вручну
+                # за довжиною рядка в СИМВОЛАХ (${#рядок} коректно рахує символи).
+                local pad=$((COLUMN_WIDTH - ${#plain_cell}))
+                if (( pad < 0 )); then pad=0; fi
+                line+="${color}${plain_cell}${NC}$(printf '%*s' "$pad" '')"
+            else
+                line+="$(printf '%*s' "$COLUMN_WIDTH" '')"
+            fi
+        done
         goto_xy $((menu_start_line + row)) 0
         erase_line
-        printf "%s%s%2d: %s%s%*s%s" \
-            "$left_prefix" "$left_color" "$left_index" "$left_display" "$NC" \
-            "$left_pad" "" \
-            "$(printf '%*s' "$left_column_width" '')"
-        printf "%s%s%2d: %s%s\n" \
-            "$right_prefix" "$right_color" "$right_index" "$right_display" "$NC"
+        echo -n -e "$line"
     done
     # Вивід елементів керування
-    local controls_start_line=$((menu_start_line + COLUMN_SIZE))
+    local controls_start_line=$((menu_start_line + ROWS_PER_COL))
     goto_xy $controls_start_line 0; echo "" # Додатковий відступ
     controls_start_line=$((controls_start_line + 1))
     goto_xy $controls_start_line 0; echo -e "${BOLD}Керування:${NC}"
     controls_start_line=$((controls_start_line + 1))
-    goto_xy $controls_start_line 0; echo -e "  ${GREEN}Space${NC}: Пауза | ${RED}S${NC}: Стоп | ${YELLOW}M${NC}: Звук | ${PURPLE}Q${NC}: Вихід | ${CYAN}←/→${NC}: Стовпчик | ${CYAN}Tab/N${NC}: Сторінка"
+    goto_xy $controls_start_line 0; echo -e "  ${GREEN}Space${NC}: Пауза | ${RED}S${NC}: Стоп | ${YELLOW}M${NC}: Звук | ${PURPLE}Q${NC}: Вихід | ${CYAN}↑↓←→${NC}: циклічна навігація | ${CYAN}Tab/N${NC}: Сторінка"
     controls_start_line=$((controls_start_line + 1))
     goto_xy $controls_start_line 0; echo -e "${BLUE}-----------------------------------${NC}"
     
@@ -397,7 +448,7 @@ cleanup() {
 # Перехоплюємо сигнали завершення, щоб виконати cleanup
 trap cleanup SIGINT SIGTERM SIGHUP
 # Перехоплюємо сигнал зміни розміру вікна терміналу
-trap 'show_menu' WINCH
+trap 'recompute_layout; show_menu' WINCH
 
 # Ініціалізація: встановлюємо початковий статус
 update_status_file "false" "" "false" "false"
@@ -405,6 +456,7 @@ update_status_file "false" "" "false" "false"
 # --- ОСНОВНИЙ ЦИКЛ КЕРУВАННЯ ---
 while true; do
     MAX_STATION_INDEX=${#STATIONS[@]} # Оновлюємо кількість станцій на випадок змін
+    recompute_layout # Підлаштовуємо кількість стовпчиків/рядків під розмір вікна
 
     show_menu # Відображаємо меню та статус
     
@@ -424,47 +476,60 @@ while true; do
         "s"|"S")
             stop_player
             ;;
-        $'\x1b[A') # Стрілка вгору
-            if [ "$CURRENT_SELECTION" -le 25 ]; then
-                if [ "$CURRENT_SELECTION" -eq 1 ]; then
-                    CURRENT_SELECTION=25
-                else
-                    CURRENT_SELECTION=$((CURRENT_SELECTION - 1))
-                fi
-            elif [ "$CURRENT_SELECTION" -eq 26 ]; then
-                CURRENT_SELECTION=50
-            else
-                CURRENT_SELECTION=$((CURRENT_SELECTION - 1))
+        $'\x1b[A') # Стрілка вгору — циклічно в межах поточного стовпчика
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            count=$(column_count "$col_index")
+            if (( count > 0 )); then
+                row_index=$(( (row_index - 1 + count) % count ))
+                CURRENT_SELECTION=$((col_index * ROWS_PER_COL + row_index + 1))
             fi
             ;;
-        $'\x1b[B') # Стрілка вниз
-            if [ "$CURRENT_SELECTION" -le 25 ]; then
-                if [ "$CURRENT_SELECTION" -eq 25 ]; then
-                    CURRENT_SELECTION=1
-                else
-                    CURRENT_SELECTION=$((CURRENT_SELECTION + 1))
-                fi
-            elif [ "$CURRENT_SELECTION" -eq 50 ]; then
-                CURRENT_SELECTION=26
-            else
-                CURRENT_SELECTION=$((CURRENT_SELECTION + 1))
+        $'\x1b[B') # Стрілка вниз — циклічно в межах поточного стовпчика
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            count=$(column_count "$col_index")
+            if (( count > 0 )); then
+                row_index=$(( (row_index + 1) % count ))
+                CURRENT_SELECTION=$((col_index * ROWS_PER_COL + row_index + 1))
             fi
             ;;
-        $'\x1b[D') # Стрілка вліво — перейти до лівого стовпчика
-            if [ "$CURRENT_SELECTION" -gt 25 ]; then
-                CURRENT_SELECTION=$((CURRENT_SELECTION - 25))
+        $'\x1b[D') # Стрілка вліво — циклічний перехід між стовпчиками (з останнього на перший)
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            new_col=$col_index
+            count=0
+            for (( i = 0; i < NUM_COLS; i++ )); do
+                new_col=$(( (new_col - 1 + NUM_COLS) % NUM_COLS ))
+                count=$(column_count "$new_col")
+                if (( count > 0 )); then break; fi
+            done
+            if (( count > 0 )); then
+                if (( row_index >= count )); then row_index=$((count - 1)); fi
+                CURRENT_SELECTION=$((new_col * ROWS_PER_COL + row_index + 1))
             fi
             ;;
-        $'\x1b[C') # Стрілка вправо — перейти до правого стовпчика
-            if [ "$CURRENT_SELECTION" -le 25 ]; then
-                CURRENT_SELECTION=$((CURRENT_SELECTION + 25))
+        $'\x1b[C') # Стрілка вправо — циклічний перехід між стовпчиками (з останнього на перший)
+            col_index=$(( (CURRENT_SELECTION - 1) / ROWS_PER_COL ))
+            row_index=$(( (CURRENT_SELECTION - 1) % ROWS_PER_COL ))
+            new_col=$col_index
+            count=0
+            for (( i = 0; i < NUM_COLS; i++ )); do
+                new_col=$(( (new_col + 1) % NUM_COLS ))
+                count=$(column_count "$new_col")
+                if (( count > 0 )); then break; fi
+            done
+            if (( count > 0 )); then
+                if (( row_index >= count )); then row_index=$((count - 1)); fi
+                CURRENT_SELECTION=$((new_col * ROWS_PER_COL + row_index + 1))
             fi
             ;;
-        $'\t'|"n"|"N") # Tab або N — перемкнути сторінку (1-50 / 51-100)
+        $'\t'|"n"|"N") # Tab або N — циклічно перемкнути сторінку
             CURRENT_PAGE=$((CURRENT_PAGE % MAX_PAGE + 1))
+            CURRENT_SELECTION=1
             ;;
         "") # Enter
-            global_index=$(( (CURRENT_PAGE - 1) * PAGE_SIZE + CURRENT_SELECTION ))
+            global_index=$((PAGE_OFFSET + CURRENT_SELECTION))
             station_info="${STATIONS[$global_index]}"
             name="${station_info%%|*}"
             url="${station_info##*|}"
