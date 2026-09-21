@@ -30,16 +30,20 @@ else
     GREEN='' BLUE='' YELLOW='' RED='' PURPLE='' CYAN='' WHITE='' NC='' BOLD='' ITALIC='' UNDERLINE=''
 fi
 
-# --- УТИЛІТНІ ФУНКЦІЇ ДЛЯ TPUT (КЕРУВАННЯ ТЕРМІНАЛОМ) ---
-clear_screen() { tput clear; }
-save_cursor() { tput sc; }
-restore_cursor() { tput rc; }
-hide_cursor() { tput civis; }
-show_cursor() { tput cnorm; }
-goto_xy() { tput cup "$1" "$2"; }
-erase_line() { tput el; } # Очистити від курсора до кінця рядка
+# --- УТИЛІТНІ ФУНКЦІЇ ДЛЯ КЕРУВАННЯ ТЕРМІНАЛОМ ---
+# Використовуємо "сирі" ANSI-послідовності замість окремих викликів tput —
+# кожен tput форкає новий процес, а при перемальовуванні меню (кожен рядок,
+# кожне натискання клавіші) таких викликів були десятки, що й спричиняло
+# помітні гальма при навігації. Пряме echo escape-кодів не форкає нічого.
+clear_screen() { printf '\033[2J\033[H'; }
+save_cursor() { printf '\033[s'; }
+restore_cursor() { printf '\033[u'; }
+hide_cursor() { printf '\033[?25l'; }
+show_cursor() { printf '\033[?25h'; }
+goto_xy() { printf '\033[%d;%dH' "$(($1 + 1))" "$(($2 + 1))"; } # tput cup — 0-based; ANSI CUP — 1-based
+erase_line() { printf '\033[K'; } # Очистити від курсора до кінця рядка
 get_terminal_height() { tput lines; }
-get_terminal_width() { tput cols; } # Додано для майбутнього використання
+get_terminal_width() { tput cols; } # Розмір вікна все ще читаємо через tput (не в гарячому шляху)
 
 # --- Анімаційний спінер (використовуватиметься для індикації завантаження) ---
 SPINNER_FRAMES=( "|" "/" "-" "\\" )
@@ -170,6 +174,7 @@ ROWS_PER_COL=1
 PAGE_SIZE=1
 MAX_PAGE=1
 PAGE_OFFSET=0
+GRID_LEFT_MARGIN=0 # Відступ зліва, щоб сітка станцій була по центру екрана
 
 # Перераховує кількість стовпчиків та рядків на сторінці за поточним розміром
 # вікна терміналу. Викликається перед кожним показом меню та при зміні
@@ -188,6 +193,11 @@ recompute_layout() {
     if (( cols_fit < 1 )); then cols_fit=1; fi
     if (( cols_fit > MAX_COLUMNS )); then cols_fit=$MAX_COLUMNS; fi
     NUM_COLS=$cols_fit
+
+    # Центруємо сітку стовпчиків по горизонталі відносно ширини терміналу
+    local grid_width=$((NUM_COLS * COLUMN_WIDTH))
+    GRID_LEFT_MARGIN=$(( (TERM_WIDTH - grid_width) / 2 ))
+    if (( GRID_LEFT_MARGIN < 0 )); then GRID_LEFT_MARGIN=0; fi
 
     PAGE_SIZE=$((NUM_COLS * ROWS_PER_COL))
     MAX_PAGE=$(( (MAX_STATION_INDEX + PAGE_SIZE - 1) / PAGE_SIZE ))
@@ -389,7 +399,7 @@ show_menu() {
                 line+="$(printf '%*s' "$COLUMN_WIDTH" '')"
             fi
         done
-        goto_xy $((menu_start_line + row)) 0
+        goto_xy $((menu_start_line + row)) "$GRID_LEFT_MARGIN"
         erase_line
         echo -n -e "$line"
     done
@@ -453,11 +463,13 @@ trap 'recompute_layout; show_menu' WINCH
 # Ініціалізація: встановлюємо початковий статус
 update_status_file "false" "" "false" "false"
 
+# Розкладку рахуємо один раз на старті — далі лише при зміні розміру вікна
+# (WINCH), а не на кожне натискання клавіші, бо tput lines/cols форкають
+# процес і це помітно гальмувало навігацію.
+recompute_layout
+
 # --- ОСНОВНИЙ ЦИКЛ КЕРУВАННЯ ---
 while true; do
-    MAX_STATION_INDEX=${#STATIONS[@]} # Оновлюємо кількість станцій на випадок змін
-    recompute_layout # Підлаштовуємо кількість стовпчиків/рядків під розмір вікна
-
     show_menu # Відображаємо меню та статус
     
     # Читаємо ввід користувача
